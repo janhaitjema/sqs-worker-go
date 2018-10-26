@@ -3,10 +3,7 @@ package worker
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -102,18 +99,11 @@ func (s *Service) Stop() {
 // Start starts the polling and will continue polling till the application is forcibly stopped
 func (s *Service) Start(h Handler) {
 
-	go func() {
-		ch := make(chan os.Signal, 1)
-		signal.Notify(ch, syscall.SIGTERM, syscall.SIGINT)
-		log.Printf("Received kill signal %s, waiting for all messages to be processed.", <-ch)
-		s.Stop()
-	}()
-
 	for {
 
 		select {
 		case <-s.stop:
-			log.Printf("Finished processing, stopping service.")
+			log.Printf("Finished processing SQS queue, stopping service.")
 			return
 		default:
 
