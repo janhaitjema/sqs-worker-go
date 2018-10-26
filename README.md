@@ -2,8 +2,6 @@
 `sqs-worker-go` is a package that makes consuming SQS messages easier. It supports message deletion after process and backup to a sepcified Firehose stream.
 
 ## Installing
-### Using Glide
-[Glide](https://github.com/Masterminds/glide) is a dependency management tool (think of it as npm) that downloads the required packages and install them into your local development envirnment for Go to reference.
 
 Simply include the package in your code
 
@@ -12,7 +10,6 @@ import (
 	"github.com/bufferapp/sqs-worker-go/worker"
 )
 ```
-and run `glide create`. You will be promted for questions like version locking. The comamnd will generate a `glide.yaml` file that is populated with the dependencies in your code. Once finished, run `glide install` to install the dependencies from `glide.yaml`
 
 ### Using `go get`
 Simply run this command to install the package and its underlying packages to your Go environment.
@@ -50,7 +47,6 @@ w.MaxNumberOfMessage = 20 // Default is 10 messages
 // Wait time for each poll
 w.WaitTimeSecond = 30 // Default is 20 seconds
 ```
-
 
 ### Invalid Messages
 Sometimes invalid messages will end up in the SQS and can't be processed properly. We may want to delete the invalid message as soon as we tried to process it, so it doesn't stay in the queue and get picked up again. For that effect, you may throw an `InvalidMessageError` from your message processor to worker.
