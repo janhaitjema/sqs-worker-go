@@ -13,7 +13,7 @@ import (
 
 ### Using `go get`
 Simply run this command to install the package and its underlying packages to your Go environment.
-`go get -u github.com/bufferapp/sqs-worker-go/worker`
+`go get -u github.com/janhaitjema/sqs-worker-go/worker`
 
 ## Using `sqs-worker-go`
 It's a simple create and start, then you are all set.
@@ -29,6 +29,9 @@ w, err := worker.NewService("your sqs queue name")
 // Process is the function you would like to use to process each individual
 // SQS message
 w.Start(worker.HandlerFunc(Process))
+
+// Stop will gracefully stop the service
+w.Stop()
 
 // Start the worker with backup option
 w.Backup("your backup firehose name").Start(worker.HandlerFunc(Process))

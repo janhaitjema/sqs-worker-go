@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"context"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -46,7 +47,9 @@ type Service struct {
 	BackupFirehoseName string
 	JobSQS             *sqs.SQS
 	JobSQSURL          string
-	stop               chan bool
+	AWSContext         aws.Context
+	AWSCancelFunc      context.CancelFunc
+	Running            sync.WaitGroup
 }
 
 // Exported variables
@@ -81,11 +84,14 @@ func NewService(n string) (*Service, error) {
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	builder := &Service{
 		AWSSession: sess,
 		JobSQS:     s,
 		JobSQSURL:  aws.StringValue(resultURL.QueueUrl),
-		stop:       make(chan bool),
+		AWSContext:    ctx,
+		AWSCancelFunc: cancel,
+		Running:       sync.WaitGroup{},
 	}
 
 	return builder, nil
@@ -93,20 +99,21 @@ func NewService(n string) (*Service, error) {
 
 // Stop will stop the service gracefully
 func (s *Service) Stop() {
-	close(s.stop)
+	log.Print("Reveived stop request, stopping SQS listener.")
+	s.AWSCancelFunc()
+	s.Running.Wait()
 }
 
 // Start starts the polling and will continue polling till the application is forcibly stopped
 func (s *Service) Start(h Handler) {
-
+	s.Running.Add(1)
+	defer s.Running.Done()
 	for {
-
 		select {
-		case <-s.stop:
-			log.Printf("Finished processing SQS queue, stopping service.")
+		case <-s.AWSContext.Done():
+			log.Print("SQS listener stopped.")
 			return
 		default:
-
 			params := &sqs.ReceiveMessageInput{
 				QueueUrl:            aws.String(s.JobSQSURL), // Required
 				MaxNumberOfMessages: aws.Int64(MaxNumberOfMessage),
@@ -116,7 +123,7 @@ func (s *Service) Start(h Handler) {
 				WaitTimeSeconds: aws.Int64(WaitTimeSecond),
 			}
 
-			resp, err := s.JobSQS.ReceiveMessage(params)
+			resp, err := s.JobSQS.ReceiveMessageWithContext(s.AWSContext, params)
 			if err != nil {
 				log.Println(err)
 				continue
