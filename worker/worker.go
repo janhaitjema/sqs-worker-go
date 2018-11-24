@@ -1,19 +1,26 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
 	"sync"
-	"context"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/firehose"
 	"github.com/aws/aws-sdk-go/service/sqs"
 )
 
 // HandlerFunc is used to define the Handler that is run on for each message
 type HandlerFunc func(msg *sqs.Message) error
+
+// Logger is log.Logger, can be set from external package
+var Logger *log.Logger
+
+func init() {
+	Logger = log.New(os.Stderr, "", log.LstdFlags)
+}
 
 // HandleMessage is used for the actual execution of each message
 func (f HandlerFunc) HandleMessage(msg *sqs.Message) error {
@@ -42,14 +49,12 @@ func NewInvalidMessageError(SQSMessage, logMessage string) InvalidMessageError {
 
 // Service works through the job SQS queue
 type Service struct {
-	AWSSession         *session.Session
-	BackupFirehose     *firehose.Firehose
-	BackupFirehoseName string
-	JobSQS             *sqs.SQS
-	JobSQSURL          string
-	AWSContext         aws.Context
-	AWSCancelFunc      context.CancelFunc
-	Running            sync.WaitGroup
+	AWSSession    *session.Session
+	JobSQS        *sqs.SQS
+	JobSQSURL     string
+	AWSContext    aws.Context
+	AWSCancelFunc context.CancelFunc
+	Running       sync.WaitGroup
 }
 
 // Exported variables
@@ -60,35 +65,29 @@ var (
 	WaitTimeSecond int64 = 20
 )
 
-// Backup to set up Firehose backup option
-func (s *Service) Backup(n string) *Service {
-	s.BackupFirehose = firehose.New(s.AWSSession)
-	s.BackupFirehoseName = n
-
-	return s
-}
-
 // NewService creates new worker service
 func NewService(n string) (*Service, error) {
 	// Setting up SQS connection
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
-	s := sqs.New(sess)
 
+	s := sqs.New(sess, &aws.Config{Logger: aws.LoggerFunc(func(args ...interface{}) {
+		Logger.Println(args...)
+	})})
 	resultURL, err := s.GetQueueUrl(&sqs.GetQueueUrlInput{
 		QueueName: aws.String(n),
 	})
 	if err != nil {
-		log.Println("Can't get the SQS queue")
+		Logger.Println("Can't get the SQS queue")
 		return nil, err
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	builder := &Service{
-		AWSSession: sess,
-		JobSQS:     s,
-		JobSQSURL:  aws.StringValue(resultURL.QueueUrl),
+		AWSSession:    sess,
+		JobSQS:        s,
+		JobSQSURL:     aws.StringValue(resultURL.QueueUrl),
 		AWSContext:    ctx,
 		AWSCancelFunc: cancel,
 		Running:       sync.WaitGroup{},
@@ -99,7 +98,7 @@ func NewService(n string) (*Service, error) {
 
 // Stop will stop the service gracefully
 func (s *Service) Stop() {
-	log.Print("Reveived stop request, stopping SQS listener.")
+	Logger.Println("Reveived stop request, stopping SQS listener.")
 	s.AWSCancelFunc()
 	s.Running.Wait()
 }
@@ -111,7 +110,7 @@ func (s *Service) Start(h Handler) {
 	for {
 		select {
 		case <-s.AWSContext.Done():
-			log.Print("SQS listener stopped.")
+			Logger.Println("SQS listener stopped.")
 			return
 		default:
 			params := &sqs.ReceiveMessageInput{
@@ -125,7 +124,7 @@ func (s *Service) Start(h Handler) {
 
 			resp, err := s.JobSQS.ReceiveMessageWithContext(s.AWSContext, params)
 			if err != nil {
-				log.Println(err)
+				Logger.Println(err)
 				continue
 			}
 			if len(resp.Messages) > 0 {
@@ -146,7 +145,7 @@ func run(s *Service, h Handler, messages []*sqs.Message) {
 			// launch goroutine
 			defer wg.Done()
 			if err := handleMessage(s, m, h); err != nil {
-				log.Println(err.Error())
+				Logger.Println(err.Error())
 			}
 		}(messages[i])
 	}
@@ -154,35 +153,15 @@ func run(s *Service, h Handler, messages []*sqs.Message) {
 	wg.Wait()
 }
 
-func (s *Service) shouldBackup() bool {
-	return (s.BackupFirehose != nil && s.BackupFirehoseName != "")
-}
-
 func handleMessage(s *Service, m *sqs.Message, h Handler) error {
 	err := h.HandleMessage(m)
 	if _, ok := err.(InvalidMessageError); ok {
 		// Invalid message encountered. Swallow the error and delete the message
-		log.Println(err.Error())
+		Logger.Println(err.Error())
 	} else if err != nil {
 		// Message is valid but there is an error proccesing it. Keeping it in the
 		// queue or send to DLQ to try again
 		return err
-	}
-
-	// Backup to Firehose option is set
-	if s.shouldBackup() {
-		params := &firehose.PutRecordInput{
-			DeliveryStreamName: aws.String(s.BackupFirehoseName), // Required
-			Record: &firehose.Record{ // Required
-				Data: []byte(*m.Body + "\n"),
-			},
-		}
-		_, err = s.BackupFirehose.PutRecord(params)
-
-		if err != nil {
-			// Swallow the backup error and go on deleting the message
-			log.Println(err.Error())
-		}
 	}
 
 	// Delete the processed (or invalid) message

@@ -1,5 +1,5 @@
 # AWS SQS Worker using Goroutine
-`sqs-worker-go` is a package that makes consuming SQS messages easier. It supports message deletion after process and backup to a sepcified Firehose stream.
+`sqs-worker-go` is a package that makes consuming SQS messages easier. It supports message deletion after process.
 
 ## Installing
 
@@ -33,8 +33,6 @@ w.Start(worker.HandlerFunc(Process))
 // Stop will gracefully stop the service
 w.Stop()
 
-// Start the worker with backup option
-w.Backup("your backup firehose name").Start(worker.HandlerFunc(Process))
 ```
 Please noe `Process` function should have the signature of `func(msg *sqs.Message) error`, while msg is the message for processing.
 
