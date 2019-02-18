@@ -72,9 +72,16 @@ func NewService(n string) (*Service, error) {
 		SharedConfigState: session.SharedConfigEnable,
 	}))
 
-	s := sqs.New(sess, &aws.Config{Logger: aws.LoggerFunc(func(args ...interface{}) {
+	config := aws.NewConfig()
+	config.Logger = aws.LoggerFunc(func(args ...interface{}) {
 		Logger.Println(args...)
-	})})
+	})
+	customEndpoint, ok := os.LookupEnv("AWS_CUSTOM_ENDPOINT_SQS")
+	if ok {
+		config.Endpoint = &customEndpoint
+	}
+
+	s := sqs.New(sess, config)
 	resultURL, err := s.GetQueueUrl(&sqs.GetQueueUrlInput{
 		QueueName: aws.String(n),
 	})
