@@ -105,7 +105,7 @@ func NewService(n string) (*Service, error) {
 
 // Stop will stop the service gracefully
 func (s *Service) Stop() {
-	Logger.Println("Reveived stop request, stopping SQS listener.")
+	Logger.Println("Received stop request, stopping SQS listener.")
 	s.AWSCancelFunc()
 	s.Running.Wait()
 }
